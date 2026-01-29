@@ -44,7 +44,11 @@ function formatSummary(obj) {
   return out;
 }
 
-bot.command('update', async (ctx) => {
+function getTimestamp() {
+  return new Date().toLocaleString('id-ID');
+}
+
+async function handleUpdateCommand(ctx) {
   try {
     const text = ctx.message.text || '';
     const parsed = parseUpdateMessage(text);
@@ -52,16 +56,31 @@ bot.command('update', async (ctx) => {
     parsed['TG_CHAT_ID'] = String(ctx.chat.id);
     parsed['TG_MSG_ID'] = String(ctx.message.message_id);
     parsed['TG_USERNAME'] = ctx.from.username || `${ctx.from.first_name || ''} ${ctx.from.last_name || ''}`.trim();
-    parsed['TANGGAL'] = parsed['DATE CREATED'] || new Date().toLocaleString('id-ID');
+    // add timestamp ke kolom TANGGAL (atau TIMESTAMP) - diprioritaskan timestamp realtime
+    parsed['TANGGAL'] = getTimestamp();
 
-    await sheets.appendRow(parsed);
+    // append row (async, non-blocking)
+    sheets.appendRow(parsed).catch(err => {
+      console.error('Error appending row in background:', err);
+    });
 
-    await ctx.reply('✅ Data berhasil diproses dan disimpan ke sheet.');
-
-    // forwarding feature removed (was sending summary to configured group)
+    // reply instantly (don't wait for sheet operation)
+    await ctx.reply('✅ Data diterima dan sedang diproses...');
   } catch (err) {
     console.error('Error handling /update', err);
-    await ctx.reply('❌ Terjadi kesalahan saat menyimpan data.');
+    await ctx.reply('❌ Terjadi kesalahan saat memproses data.');
+  }
+}
+
+// Handle command /update (works in DM and groups with mention)
+bot.command('update', handleUpdateCommand);
+
+// Also handle if someone types /UPDATE anywhere in message (for group flexibility)
+bot.on('text', async (ctx) => {
+  const text = ctx.message.text || '';
+  // trigger if message starts with /update or @bot /update
+  if (text.match(/^\/update/i) || text.match(/@\w+\s+\/update/i)) {
+    await handleUpdateCommand(ctx);
   }
 });
 
