@@ -49,7 +49,7 @@ const auth = new google.auth.GoogleAuth({
 const sheets = google.sheets({ version: 'v4', auth });
 
 const PROGRES_SHEET = 'PROGRES PSB';
-const USER_SHEET = 'USER';
+const MASTER = 'STATUS';
 
 // === HELPER: Get sheet data ===
 async function getSheetData(sheetName) {
