@@ -280,10 +280,6 @@ bot.on('message', async (msg) => {
       await appendSheetData(PROGRES_SHEET, row);
 
       let confirmMsg = '✅ Data berhasil disimpan!\n\n';
-      confirmMsg += `Channel: ${parsed.channel}\n`;
-      confirmMsg += `SC Order: ${parsed.scOrderNo}\n`;
-      confirmMsg += `Customer: ${parsed.customerName}\n`;
-      confirmMsg += `Workzone: ${parsed.workzone}`;
 
       return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
     }
@@ -302,34 +298,26 @@ bot.on('message', async (msg) => {
         map[teknisi][symptom] = (map[teknisi][symptom] || 0) + 1;
       }
 
-      let msg = '📊 LAPORAN TEKNISI\n';
-      msg += '╔════════════════════════════════╦═══╗\n';
-      msg += '║ TEKNISI                        ║ WO║\n';
-
       const entries = Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total);
 
-      entries.forEach((entry, idx) => {
+      let msg = '📊 <b>LAPORAN TEKNISI</b>\n\n';
+      
+      entries.forEach((entry) => {
         const [teknisi, counts] = entry;
-        const isLast = idx === entries.length - 1;
-        
-        msg += '╠════════════════════════════════╬═══╣\n';
-        msg += `║ ${teknisi.padEnd(30)} ║ ${String(counts.total).padStart(2)}║\n`;
+        msg += `🔸 <b>${teknisi}</b>\n`;
+        msg += `   <b>Total:</b> ${counts.total} WO\n`;
         
         const symptoms = Object.entries(counts)
           .filter(([k]) => k !== 'total')
           .sort((a, b) => b[1] - a[1]);
         
-        symptoms.forEach((symp, sympIdx) => {
-          const [symptomName, count] = symp;
-          const isLastSymp = sympIdx === symptoms.length - 1;
-          const prefix = isLastSymp ? '  └─ ' : '  ├─ ';
-          const paddedName = (prefix + symptomName).padEnd(30);
-          msg += `║ ${paddedName} ║ ${String(count).padStart(2)}║\n`;
+        symptoms.forEach(([symptomName, count]) => {
+          msg += `   • ${symptomName}: ${count}\n`;
         });
+        msg += '\n';
       });
 
-      msg += '╚════════════════════════════════╩═══╝';
       return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
     }
 
@@ -347,34 +335,26 @@ bot.on('message', async (msg) => {
         map[workzone][symptom] = (map[workzone][symptom] || 0) + 1;
       }
 
-      let msg = '📍 REKAP WORKZONE\n';
-      msg += '╔════════════════════════════════╦═══╗\n';
-      msg += '║ WORKZONE                       ║ WO║\n';
-
       const entries = Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total);
 
-      entries.forEach((entry, idx) => {
+      let msg = '📍 <b>REKAP WORKZONE</b>\n\n';
+      
+      entries.forEach((entry) => {
         const [workzone, counts] = entry;
-        const isLast = idx === entries.length - 1;
-        
-        msg += '╠════════════════════════════════╬═══╣\n';
-        msg += `║ ${workzone.padEnd(30)} ║ ${String(counts.total).padStart(2)}║\n`;
+        msg += `🔸 <b>${workzone}</b>\n`;
+        msg += `   <b>Total:</b> ${counts.total} WO\n`;
         
         const symptoms = Object.entries(counts)
           .filter(([k]) => k !== 'total')
           .sort((a, b) => b[1] - a[1]);
         
-        symptoms.forEach((symp, sympIdx) => {
-          const [symptomName, count] = symp;
-          const isLastSymp = sympIdx === symptoms.length - 1;
-          const prefix = isLastSymp ? '  └─ ' : '  ├─ ';
-          const paddedName = (prefix + symptomName).padEnd(30);
-          msg += `║ ${paddedName} ║ ${String(count).padStart(2)}║\n`;
+        symptoms.forEach(([symptomName, count]) => {
+          msg += `   • ${symptomName}: ${count}\n`;
         });
+        msg += '\n';
       });
 
-      msg += '╚════════════════════════════════╩═══╝';
       return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
     }
 
