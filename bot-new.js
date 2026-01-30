@@ -155,7 +155,7 @@ function parseProgres(text, userRow, username) {
       year: 'numeric',
       timeZone: 'Asia/Jakarta',
     }),
-    teknisi: (userRow && userRow[1]) ? (userRow[1] || username).replace('@', '') : (username || ''),
+    teknisi: (username || '').replace('@', ''),
   };
 
   const patterns = {
