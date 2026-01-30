@@ -49,7 +49,7 @@ const auth = new google.auth.GoogleAuth({
 const sheets = google.sheets({ version: 'v4', auth });
 
 const PROGRES_SHEET = 'PROGRES PSB';
-const USER_SHEET = 'USER';
+const MASTER_SHEET = 'MASTER';  // Changed from USER_SHEET
 
 // === HELPER: Get sheet data ===
 async function getSheetData(sheetName) {
@@ -108,13 +108,13 @@ async function sendTelegram(chatId, text, options = {}) {
 // === HELPER: Get user data ===
 async function getUserData(username) {
   try {
-    const data = await getSheetData(USER_SHEET);
+    const data = await getSheetData(MASTER_SHEET);
     console.log(`Looking for user: @${username}`);
     for (let i = 1; i < data.length; i++) {
-      // Column index: ID TELEGRAM (0), USERNAME TELEGRAM (1), ROLE (2), STATUS (3), SEKTOR (4), etc
-      const sheetUser = (data[i][1] || '').replace('@', '').toLowerCase().trim();
+      // MASTER Sheet columns: ID TELEGRAM (7), USERNAME TELEGRAM (8), ROLE (9), STATUS (10), SEKTOR (11), etc
+      const sheetUser = (data[i][8] || '').replace('@', '').toLowerCase().trim();
       const inputUser = (username || '').replace('@', '').toLowerCase().trim();
-      const status = (data[i][3] || '').toUpperCase().trim();
+      const status = (data[i][10] || '').toUpperCase().trim();
       
       if (sheetUser === inputUser && status === 'AKTIF') {
         console.log(`✅ User found: ${sheetUser} (Status: ${status})`);
