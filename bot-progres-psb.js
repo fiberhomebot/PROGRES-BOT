@@ -1,4 +1,8 @@
 require('dotenv').config();
+// Normalize environment variable names for compatibility with older setups
+process.env.TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || process.env.BOT_TOKEN;
+process.env.SHEET_ID = process.env.SHEET_ID || process.env.SPREADSHEET_ID;
+process.env.GOOGLE_SERVICE_ACCOUNT_KEY = process.env.GOOGLE_SERVICE_ACCOUNT_KEY || process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT;
 const TelegramBot = require('node-telegram-bot-api');
 const { google } = require('googleapis');
 const fs = require('fs');
@@ -75,7 +79,7 @@ function parseProgres(text, userRow, username) {
 // === Konfigurasi dari environment variables ===
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const SHEET_ID = process.env.SHEET_ID;
-const GOOGLE_SERVICE_ACCOUNT_KEY = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+let GOOGLE_SERVICE_ACCOUNT_KEY = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
 
 // Validasi environment variables
 if (!TOKEN) {
@@ -86,8 +90,22 @@ if (!SHEET_ID) {
   console.error('ERROR: SHEET_ID environment variable is not set!');
   process.exit(1);
 }
+
+// Try to read from file first if env var is not set or looks like a path
+if (!GOOGLE_SERVICE_ACCOUNT_KEY || /\.json$/i.test(GOOGLE_SERVICE_ACCOUNT_KEY)) {
+  const credentialPath = GOOGLE_SERVICE_ACCOUNT_KEY || './service-account.json';
+  try {
+    if (fs.existsSync(credentialPath)) {
+      GOOGLE_SERVICE_ACCOUNT_KEY = fs.readFileSync(credentialPath, 'utf8');
+      console.log(`Loaded service account from file: ${credentialPath}`);
+    }
+  } catch (e) {
+    console.log(`Could not read credentials from ${credentialPath}, will try env var`);
+  }
+}
+
 if (!GOOGLE_SERVICE_ACCOUNT_KEY) {
-  console.error('ERROR: GOOGLE_SERVICE_ACCOUNT_KEY environment variable is not set!');
+  console.error('ERROR: GOOGLE_SERVICE_ACCOUNT_KEY environment variable is not set and no service-account.json file found!');
   process.exit(1);
 }
 
@@ -97,20 +115,64 @@ const USER_SHEET = 'USER';
 // === Setup Google Sheets API ===
 let serviceAccount;
 try {
-  let keyData = GOOGLE_SERVICE_ACCOUNT_KEY;
-  
+  let keyData = (GOOGLE_SERVICE_ACCOUNT_KEY || '').toString();
+
+  // Trim and remove BOM if present
+  keyData = keyData.trim();
+  if (keyData.charCodeAt(0) === 0xFEFF) {
+    keyData = keyData.slice(1);
+  }
+
+  // If the value looks like a path to a JSON file, try reading it
+  try {
+    const looksLikePath = /(^\.|^\\|^\/|\\.json$|\.json$)/i.test(keyData);
+    if (looksLikePath) {
+      try {
+        const possiblePath = keyData.replace(/^file:\/\//i, '');
+        if (fs.existsSync(possiblePath)) {
+          keyData = fs.readFileSync(possiblePath, 'utf8');
+        }
+      } catch (e) {
+        // ignore and continue trying other strategies
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // If it's not a direct JSON string, try common transformations
   if (!keyData.startsWith('{')) {
+    // Try base64 decode
     try {
-      keyData = Buffer.from(keyData, 'base64').toString('utf-8');
+      const decoded = Buffer.from(keyData, 'base64').toString('utf-8');
+      if (decoded.trim().startsWith('{')) {
+        keyData = decoded;
+      }
     } catch (e) {
-      console.log('Not base64 encoded, using as is');
+      // not base64 or decode failed
     }
   }
-  
+
+  // If still not JSON, maybe it contains escaped newlines; unescape and trim surrounding quotes
+  if (!keyData.trim().startsWith('{')) {
+    let unescaped = keyData.replace(/\\n/g, '\n').replace(/\\\"/g, '\"');
+    if ((unescaped.startsWith('"') && unescaped.endsWith('"')) || (unescaped.startsWith("'") && unescaped.endsWith("'"))) {
+      unescaped = unescaped.slice(1, -1);
+    }
+    keyData = unescaped;
+  }
+
+  // Final parse attempt
   serviceAccount = JSON.parse(keyData);
-  console.log('Google Service Account parsed successfully');
+
+  // Log safely: show a small prefix (masked) to help debugging without printing secret
+  const preview = JSON.stringify(Object.keys(serviceAccount || {})).slice(0, 200);
+  console.log('Google Service Account parsed successfully; keys:', preview);
 } catch (e) {
+  const sample = (GOOGLE_SERVICE_ACCOUNT_KEY || '').toString().slice(0, 120).replace(/\n/g, '\\n');
   console.error('ERROR parsing GOOGLE_SERVICE_ACCOUNT_KEY:', e.message);
+  console.error('Sample of provided value (truncated, escaped):', sample);
+  console.error('Hint: set GOOGLE_SERVICE_ACCOUNT_KEY to the raw JSON content, or a base64-encoded JSON string, without extra surrounding quotes.');
   process.exit(1);
 }
 
