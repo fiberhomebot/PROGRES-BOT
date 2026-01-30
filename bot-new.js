@@ -49,7 +49,7 @@ const auth = new google.auth.GoogleAuth({
 const sheets = google.sheets({ version: 'v4', auth });
 
 const PROGRES_SHEET = 'PROGRES PSB';
-const MASTER = 'STATUS';
+const USER_SHEET = 'USER';
 
 // === HELPER: Get sheet data ===
 async function getSheetData(sheetName) {
@@ -109,14 +109,19 @@ async function sendTelegram(chatId, text, options = {}) {
 async function getUserData(username) {
   try {
     const data = await getSheetData(USER_SHEET);
+    console.log(`Looking for user: @${username}`);
     for (let i = 1; i < data.length; i++) {
-      const sheetUser = (data[i][1] || '').replace('@', '').toLowerCase();
-      const inputUser = (username || '').replace('@', '').toLowerCase();
-      const status = (data[i][3] || '').toUpperCase();
+      // Column index: ID TELEGRAM (0), USERNAME TELEGRAM (1), ROLE (2), STATUS (3), SEKTOR (4), etc
+      const sheetUser = (data[i][1] || '').replace('@', '').toLowerCase().trim();
+      const inputUser = (username || '').replace('@', '').toLowerCase().trim();
+      const status = (data[i][3] || '').toUpperCase().trim();
+      
       if (sheetUser === inputUser && status === 'AKTIF') {
+        console.log(`✅ User found: ${sheetUser} (Status: ${status})`);
         return data[i];
       }
     }
+    console.log(`❌ User not found: @${username}`);
     return null;
   } catch (error) {
     console.error('Error getting user:', error.message);
@@ -254,27 +259,27 @@ bot.on('message', async (msg) => {
       }
 
       const row = [
-        parsed.dateCreated,
-        parsed.channel,
-        parsed.workorder,
-        parsed.scOrderNo,
-        parsed.serviceNo,
-        parsed.customerName,
-        parsed.workzone,
-        parsed.contactPhone,
-        parsed.odp,
-        parsed.paket,
-        parsed.memo,
-        parsed.symptom,
-        parsed.tikor,
-        parsed.address,
-        parsed.bookingDate,
-        parsed.mitra,
-        parsed.ncli,
-        parsed.ao,
-        parsed.teknisi,
-        chatId,
-        msgId,
+        parsed.dateCreated,    // A: DATE CREATED
+        parsed.channel,        // B: CHANNEL
+        parsed.workorder,      // C: WORKORDER
+        parsed.scOrderNo,      // D: SC ORDER NO / AO
+        parsed.serviceNo,      // E: SERVICE NO
+        parsed.customerName,   // F: CUSTOMER NAME
+        parsed.workzone,       // G: WORKZONE
+        parsed.contactPhone,   // H: CONTACT PHONE
+        parsed.odp,            // I: ODP
+        parsed.paket,          // J: PAKET / PACKAGE
+        parsed.memo,           // K: MEMO
+        parsed.symptom,        // L: SYMPTOM
+        parsed.tikor,          // M: TIKOR
+        parsed.address,        // N: ADDRESS
+        parsed.bookingDate,    // O: BOOKING DATE
+        parsed.mitra,          // P: MITRA
+        parsed.ncli,           // Q: NCLI
+        parsed.ao,             // R: AO
+        parsed.teknisi,        // S: TEKNISI
+        chatId,                // T: CHAT_ID
+        msgId,                 // U: MESSAGE_ID
       ];
 
       await appendSheetData(PROGRES_SHEET, row);
@@ -294,8 +299,8 @@ bot.on('message', async (msg) => {
       let map = {};
 
       for (let i = 1; i < data.length; i++) {
-        const teknisi = (data[i][18] || '-').trim();
-        const symptom = (data[i][11] || '-').trim();
+        const teknisi = (data[i][18] || '-').trim();  // Column S (index 18)
+        const symptom = (data[i][11] || '-').trim();  // Column L (index 11)
 
         if (!map[teknisi]) map[teknisi] = { total: 0 };
         map[teknisi].total++;
@@ -306,7 +311,7 @@ bot.on('message', async (msg) => {
       Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total)
         .forEach(([teknisi, counts]) => {
-          msg += `${teknisi}: ${counts.total}\n`;
+          msg += `${teknisi}: ${counts.total} WO\n`;
           Object.entries(counts).forEach(([k, v]) => {
             if (k !== 'total') msg += `  ${k}: ${v}\n`;
           });
@@ -321,8 +326,8 @@ bot.on('message', async (msg) => {
       let map = {};
 
       for (let i = 1; i < data.length; i++) {
-        const workzone = (data[i][6] || '-').trim();
-        const symptom = (data[i][11] || '-').trim();
+        const workzone = (data[i][6] || '-').trim();   // Column G (index 6)
+        const symptom = (data[i][11] || '-').trim();   // Column L (index 11)
 
         if (!map[workzone]) map[workzone] = { total: 0 };
         map[workzone].total++;
@@ -333,7 +338,7 @@ bot.on('message', async (msg) => {
       Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total)
         .forEach(([zone, counts]) => {
-          msg += `${zone}: ${counts.total}\n`;
+          msg += `${zone}: ${counts.total} WO\n`;
           Object.entries(counts).forEach(([k, v]) => {
             if (k !== 'total') msg += `  ${k}: ${v}\n`;
           });
