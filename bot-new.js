@@ -302,16 +302,34 @@ bot.on('message', async (msg) => {
         map[teknisi][symptom] = (map[teknisi][symptom] || 0) + 1;
       }
 
-      let msg = '📊 LAPORAN TEKNISI\n\n';
-      Object.entries(map)
-        .sort((a, b) => b[1].total - a[1].total)
-        .forEach(([teknisi, counts]) => {
-          msg += `${teknisi}: ${counts.total} WO\n`;
-          Object.entries(counts).forEach(([k, v]) => {
-            if (k !== 'total') msg += `  ${k}: ${v}\n`;
-          });
-        });
+      let msg = '📊 LAPORAN TEKNISI\n';
+      msg += '╔════════════════════════════════╦═══╗\n';
+      msg += '║ TEKNISI                        ║ WO║\n';
 
+      const entries = Object.entries(map)
+        .sort((a, b) => b[1].total - a[1].total);
+
+      entries.forEach((entry, idx) => {
+        const [teknisi, counts] = entry;
+        const isLast = idx === entries.length - 1;
+        
+        msg += '╠════════════════════════════════╬═══╣\n';
+        msg += `║ ${teknisi.padEnd(30)} ║ ${String(counts.total).padStart(2)}║\n`;
+        
+        const symptoms = Object.entries(counts)
+          .filter(([k]) => k !== 'total')
+          .sort((a, b) => b[1] - a[1]);
+        
+        symptoms.forEach((symp, sympIdx) => {
+          const [symptomName, count] = symp;
+          const isLastSymp = sympIdx === symptoms.length - 1;
+          const prefix = isLastSymp ? '  └─ ' : '  ├─ ';
+          const paddedName = (prefix + symptomName).padEnd(30);
+          msg += `║ ${paddedName} ║ ${String(count).padStart(2)}║\n`;
+        });
+      });
+
+      msg += '╚════════════════════════════════╩═══╝';
       return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
     }
 
@@ -329,16 +347,34 @@ bot.on('message', async (msg) => {
         map[workzone][symptom] = (map[workzone][symptom] || 0) + 1;
       }
 
-      let msg = '📍 REKAP WORKZONE\n\n';
-      Object.entries(map)
-        .sort((a, b) => b[1].total - a[1].total)
-        .forEach(([zone, counts]) => {
-          msg += `${zone}: ${counts.total} WO\n`;
-          Object.entries(counts).forEach(([k, v]) => {
-            if (k !== 'total') msg += `  ${k}: ${v}\n`;
-          });
-        });
+      let msg = '📍 REKAP WORKZONE\n';
+      msg += '╔════════════════════════════════╦═══╗\n';
+      msg += '║ WORKZONE                       ║ WO║\n';
 
+      const entries = Object.entries(map)
+        .sort((a, b) => b[1].total - a[1].total);
+
+      entries.forEach((entry, idx) => {
+        const [workzone, counts] = entry;
+        const isLast = idx === entries.length - 1;
+        
+        msg += '╠════════════════════════════════╬═══╣\n';
+        msg += `║ ${workzone.padEnd(30)} ║ ${String(counts.total).padStart(2)}║\n`;
+        
+        const symptoms = Object.entries(counts)
+          .filter(([k]) => k !== 'total')
+          .sort((a, b) => b[1] - a[1]);
+        
+        symptoms.forEach((symp, sympIdx) => {
+          const [symptomName, count] = symp;
+          const isLastSymp = sympIdx === symptoms.length - 1;
+          const prefix = isLastSymp ? '  └─ ' : '  ├─ ';
+          const paddedName = (prefix + symptomName).padEnd(30);
+          msg += `║ ${paddedName} ║ ${String(count).padStart(2)}║\n`;
+        });
+      });
+
+      msg += '╚════════════════════════════════╩═══╝';
       return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
     }
 
