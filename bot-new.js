@@ -275,13 +275,15 @@ bot.on('message', async (msg) => {
         parsed.stbId,          // P: STB ID
         parsed.nikStb,         // Q: NIK STB
         parsed.teknisi,        // R: NAMA TELEGRAM TEKNISI
-        chatId,                // S: CHAT_ID
-        msgId,                 // T: MESSAGE_ID
       ];
 
       await appendSheetData(PROGRES_SHEET, row);
 
-      let confirmMsg = '✅ Data berhasil disimpan!\n\n'
+      let confirmMsg = '✅ Data berhasil disimpan!\n\n';
+      confirmMsg += `Channel: ${parsed.channel}\n`;
+      confirmMsg += `SC Order: ${parsed.scOrderNo}\n`;
+      confirmMsg += `Customer: ${parsed.customerName}\n`;
+      confirmMsg += `Workzone: ${parsed.workzone}`;
 
       return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
     }
@@ -292,8 +294,8 @@ bot.on('message', async (msg) => {
       let map = {};
 
       for (let i = 1; i < data.length; i++) {
-        const teknisi = (data[i][18] || '-').trim();  // Column S (index 18)
-        const symptom = (data[i][11] || '-').trim();  // Column L (index 11)
+        const teknisi = (data[i][17] || '-').trim();  // Column R (index 17)
+        const symptom = (data[i][10] || '-').trim();  // Column K (index 10)
 
         if (!map[teknisi]) map[teknisi] = { total: 0 };
         map[teknisi].total++;
@@ -319,8 +321,8 @@ bot.on('message', async (msg) => {
       let map = {};
 
       for (let i = 1; i < data.length; i++) {
-        const workzone = (data[i][6] || '-').trim();   // Column G (index 6)
-        const symptom = (data[i][11] || '-').trim();   // Column L (index 11)
+        const workzone = (data[i][7] || '-').trim();   // Column H (index 7)
+        const symptom = (data[i][10] || '-').trim();   // Column K (index 10)
 
         if (!map[workzone]) map[workzone] = { total: 0 };
         map[workzone].total++;
