@@ -139,16 +139,15 @@ function parseProgres(text, userRow, username) {
     workzone: '',
     contactPhone: '',
     odp: '',
-    paket: '',
     memo: '',
     symptom: '',
-    address: '',
-    bookingDate: '',
-    mitra: '',
-    ncli: '',
     ao: '',
     workorder: '',
     tikor: '',
+    snOnt: '',
+    nikOnt: '',
+    stbId: '',
+    nikStb: '',
     dateCreated: new Date().toLocaleDateString('id-ID', {
       weekday: 'long',
       day: 'numeric',
@@ -161,22 +160,21 @@ function parseProgres(text, userRow, username) {
 
   const patterns = {
     channel: /CHANNEL\s*:\s*([A-Za-z0-9]+)/i,
-    scOrderNo: /SC\s*ORDER\s*NO\s*:\s*([A-Za-z0-9\-]+)/i,
-    serviceNo: /SERVICE\s*NO\s*:\s*(\d+)/i,
+    scOrderNo: /SC\s*ORDER\s*NO\s*:\s*(.+?)(?=\n|$)/i,
+    serviceNo: /SERVICE\s*NO\s*:\s*([0-9]+)/i,
     customerName: /CUSTOMER\s*NAME\s*:\s*(.+?)(?=\n|$)/i,
-    workzone: /WORKZONE\s*:\s*([A-Z0-9]+)/i,
+    workzone: /WORKZONE\s*:\s*([A-Za-z0-9]+)/i,
     contactPhone: /CONTACT\s*PHONE\s*:\s*([0-9\+\-\s]+)/i,
     odp: /ODP\s*:\s*(.+?)(?=\n|$)/i,
-    paket: /PAKET\s*:\s*(.+?)(?=\n|$)/i,
     memo: /MEMO\s*:\s*(.+?)(?=\n|$)/i,
     symptom: /SYMPTOM\s*:\s*(.+?)(?=\n|$)/i,
-    address: /ADDRESS\s*:\s*(.+?)(?=\n|$)/i,
-    bookingDate: /BOOKING\s*DATE\s*:\s*(.+?)(?=\n|$)/i,
-    mitra: /MITRA\s*:\s*(.+?)(?=\n|$)/i,
-    ncli: /NCLI\s*:\s*([0-9]+)/i,
-    ao: /AO\s*:\s*([A-Za-z0-9]+)/i,
+    ao: /AO\s*:\s*(.+?)(?=\n|$)/i,
     workorder: /WORKORDER\s*:\s*([A-Za-z0-9]+)/i,
     tikor: /TIKOR\s*:\s*(.+?)(?=\n|$)/i,
+    snOnt: /SN\s*ONT\s*:\s*(.+?)(?=\n|$)/i,
+    nikOnt: /NIK\s*ONT\s*:\s*([0-9]+)/i,
+    stbId: /STB\s*ID\s*:\s*(.+?)(?=\n|$)/i,
+    nikStb: /NIK\s*STB\s*:\s*([0-9]+)/i,
   };
 
   for (const [key, pattern] of Object.entries(patterns)) {
@@ -262,24 +260,23 @@ bot.on('message', async (msg) => {
         parsed.dateCreated,    // A: DATE CREATED
         parsed.channel,        // B: CHANNEL
         parsed.workorder,      // C: WORKORDER
-        parsed.scOrderNo,      // D: SC ORDER NO / AO
-        parsed.serviceNo,      // E: SERVICE NO
-        parsed.customerName,   // F: CUSTOMER NAME
-        parsed.workzone,       // G: WORKZONE
-        parsed.contactPhone,   // H: CONTACT PHONE
-        parsed.odp,            // I: ODP
-        parsed.paket,          // J: PAKET / PACKAGE
-        parsed.memo,           // K: MEMO
-        parsed.symptom,        // L: SYMPTOM
+        parsed.ao,             // D: AO
+        parsed.scOrderNo,      // E: SC ORDER NO
+        parsed.serviceNo,      // F: SERVICE NO
+        parsed.customerName,   // G: CUSTOMER NAME
+        parsed.workzone,       // H: WORKZONE
+        parsed.contactPhone,   // I: CONTACT PHONE
+        parsed.odp,            // J: ODP
+        parsed.symptom,        // K: SYMPTOM
+        parsed.memo,           // L: MEMO
         parsed.tikor,          // M: TIKOR
-        parsed.address,        // N: ADDRESS
-        parsed.bookingDate,    // O: BOOKING DATE
-        parsed.mitra,          // P: MITRA
-        parsed.ncli,           // Q: NCLI
-        parsed.ao,             // R: AO
-        parsed.teknisi,        // S: TEKNISI
-        chatId,                // T: CHAT_ID
-        msgId,                 // U: MESSAGE_ID
+        parsed.snOnt,          // N: SN ONT
+        parsed.nikOnt,         // O: NIK ONT
+        parsed.stbId,          // P: STB ID
+        parsed.nikStb,         // Q: NIK STB
+        parsed.teknisi,        // R: NAMA TELEGRAM TEKNISI
+        chatId,                // S: CHAT_ID
+        msgId,                 // T: MESSAGE_ID
       ];
 
       await appendSheetData(PROGRES_SHEET, row);
