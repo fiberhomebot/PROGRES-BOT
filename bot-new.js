@@ -280,10 +280,6 @@ bot.on('message', async (msg) => {
       await appendSheetData(PROGRES_SHEET, row);
 
       let confirmMsg = '✅ Data berhasil disimpan!\n\n';
-      confirmMsg += `Channel: ${parsed.channel}\n`;
-      confirmMsg += `SC Order: ${parsed.scOrderNo}\n`;
-      confirmMsg += `Customer: ${parsed.customerName}\n`;
-      confirmMsg += `Workzone: ${parsed.workzone}`;
 
       return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
     }
@@ -316,7 +312,7 @@ bot.on('message', async (msg) => {
       const entries = Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total);
 
-      let msg = `📊 <b>LAPORAN TEKNISI - HARI INI</b>\n<b>${today}</b>\n\n`;
+      let msg = `📊 <b>LAPORAN PROGRESS SURVEY TEKNISI - HI</b>\n<b>${today}</b>\n\n`;
       
       if (entries.length === 0) {
         msg += '<i>Belum ada data untuk hari ini</i>';
@@ -357,7 +353,7 @@ bot.on('message', async (msg) => {
       const entries = Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total);
 
-      let msg = '📊 <b>LAPORAN TEKNISI - KESELURUHAN</b>\n\n';
+      let msg = '📊 <b>LAPORAN PROGRESS SURVEY TEKNISI - KESELURUHAN</b>\n\n';
       
       if (entries.length === 0) {
         msg += '<i>Belum ada data</i>';
@@ -409,7 +405,7 @@ bot.on('message', async (msg) => {
       const entries = Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total);
 
-      let msg = `📍 <b>REKAP WORKZONE - HARI INI</b>\n<b>${today}</b>\n\n`;
+      let msg = `📍 <b>REKAP PROGRES BERDASARKAN WORKZONE - HI</b>\n<b>${today}</b>\n\n`;
       
       if (entries.length === 0) {
         msg += '<i>Belum ada data untuk hari ini</i>';
@@ -450,7 +446,7 @@ bot.on('message', async (msg) => {
       const entries = Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total);
 
-      let msg = '📍 <b>REKAP WORKZONE - KESELURUHAN</b>\n\n';
+      let msg = '📍 <b>REKAP PROGRES BERDASARKAN WORKZONE - KESELURUHAN</b>\n\n';
       
       if (entries.length === 0) {
         msg += '<i>Belum ada data</i>';
@@ -480,9 +476,9 @@ bot.on('message', async (msg) => {
 
 Commands:
 /UPDATE - Input progres (di group)
-/progres - Laporan teknisi HARI INI
+/progres - Laporan teknisi HI
 /allprogres - Laporan teknisi KESELURUHAN
-/cek - Rekap workzone HARI INI
+/cek - Rekap workzone HI
 /allcek - Rekap workzone KESELURUHAN
 /help - Bantuan
 
