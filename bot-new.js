@@ -126,6 +126,26 @@ async function getUserRole(username) {
   }
 }
 
+// === HELPER: Get user data ===
+async function getUserData(username) {
+  try {
+    const data = await getSheetData(MASTER_SHEET);
+    for (let i = 1; i < data.length; i++) {
+      const sheetUser = (data[i][8] || '').replace('@', '').toLowerCase().trim();
+      const inputUser = (username || '').replace('@', '').toLowerCase().trim();
+      const status = (data[i][10] || '').toUpperCase().trim();
+      
+      if (sheetUser === inputUser && status === 'AKTIF') {
+        return data[i];
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting user:', error.message);
+    return null;
+  }
+}
+
 // === HELPER: Check authorization ===
 async function checkAuthorization(username, requiredRoles = []) {
   try {
@@ -361,6 +381,7 @@ bot.on('message', async (msg) => {
       await appendSheetData(PROGRES_SHEET, row);
 
       let confirmMsg = '✅ Data berhasil disimpan!\n\n';
+
 
       return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
     }
