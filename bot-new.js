@@ -345,10 +345,6 @@ bot.on('message', async (msg) => {
       await appendSheetData(PROGRES_SHEET, row);
 
       let confirmMsg = '✅ Data berhasil disimpan!\n\n';
-      confirmMsg += `Channel: ${parsed.channel}\n`;
-      confirmMsg += `SC Order: ${parsed.scOrderNo}\n`;
-      confirmMsg += `Customer: ${parsed.customerName}\n`;
-      confirmMsg += `Workzone: ${parsed.workzone}`;
 
       return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
     }
