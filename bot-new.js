@@ -356,65 +356,73 @@ bot.on('message', async (msg) => {
 
     // === /AKTIVASI ===
     else if (/^\/AKTIVASI\b/i.test(text)) {
-      const inputText = text.replace(/^\/AKTIVASI\s*/i, '').trim();
-      if (!inputText) {
-        return sendTelegram(chatId, '❌ Silakan kirim data aktivasi setelah /AKTIVASI.', { reply_to_message_id: msgId });
+      try {
+        const inputText = text.replace(/^\/AKTIVASI\s*/i, '').trim();
+        if (!inputText) {
+          return sendTelegram(chatId, '❌ Silakan kirim data aktivasi setelah /AKTIVASI.', { reply_to_message_id: msgId });
+        }
+
+        const parsed = parseAktivasi(inputText, username);
+        console.log('✅ Parsed aktivasi data:', parsed);
+
+        const required = ['channel', 'customerName', 'serviceNo', 'workzone'];
+        const missing = required.filter(f => !parsed[f]);
+
+        if (missing.length > 0) {
+          return sendTelegram(chatId, `❌ Field wajib: ${missing.join(', ')}`, { reply_to_message_id: msgId });
+        }
+
+        // Tentukan package (gunakan preferensi PACKAGE untuk DIGIPOS, PAKET untuk BS/ES/GS)
+        const packageInfo = parsed.package || parsed.paket || '-';
+
+        const row = [
+          new Date().toLocaleDateString('id-ID', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            timeZone: 'Asia/Jakarta',
+          }),                       // A: TANGGAL INPUT
+          parsed.channel,           // B: CHANNEL
+          parsed.dateCreated,       // C: DATE CREATED
+          parsed.scOrderNo,         // D: SC ORDER NO
+          parsed.workorder,         // E: WORKORDER
+          parsed.ao,                // F: AO
+          parsed.ncli,              // G: NCLI
+          parsed.serviceNo,         // H: SERVICE NO
+          parsed.address,           // I: ADDRESS
+          parsed.customerName,      // J: CUSTOMER NAME
+          parsed.workzone,          // K: WORKZONE
+          parsed.contactPhone,      // L: CONTACT PHONE
+          parsed.bookingDate,       // M: BOOKING DATE
+          packageInfo,              // N: PAKET/PACKAGE
+          parsed.odp,               // O: ODP
+          parsed.mitra,             // P: MITRA
+          parsed.symptom,           // Q: SYMPTOM
+          parsed.memo,              // R: MEMO
+          parsed.tikor,             // S: TIKOR
+          parsed.snOnt,             // T: SN ONT
+          parsed.nikOnt,            // U: NIK ONT
+          parsed.stbId,             // V: STB ID
+          parsed.nikStb,            // W: NIK STB
+          parsed.teknisi,           // X: TEKNISI
+        ];
+
+        console.log('📝 Row data to append:', row);
+        await appendSheetData(AKTIVASI_SHEET, row);
+
+        let confirmMsg = '✅ Data aktivasi berhasil disimpan!\n\n';
+        confirmMsg += `Channel: ${parsed.channel}\n`;
+        confirmMsg += `Customer: ${parsed.customerName}\n`;
+        confirmMsg += `Service No: ${parsed.serviceNo}\n`;
+        confirmMsg += `Workzone: ${parsed.workzone}`;
+
+        return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
+      } catch (aktivasiErr) {
+        console.error('❌ /AKTIVASI Error:', aktivasiErr);
+        console.error('Stack:', aktivasiErr.stack);
+        return sendTelegram(chatId, `❌ Error: ${aktivasiErr.message}`, { reply_to_message_id: msgId });
       }
-
-      const parsed = parseAktivasi(inputText, username);
-
-      const required = ['channel', 'customerName', 'serviceNo', 'workzone'];
-      const missing = required.filter(f => !parsed[f]);
-
-      if (missing.length > 0) {
-        return sendTelegram(chatId, `❌ Field wajib: ${missing.join(', ')}`, { reply_to_message_id: msgId });
-      }
-
-      // Tentukan package (gunakan preferensi PACKAGE untuk DIGIPOS, PAKET untuk BS/ES/GS)
-      const packageInfo = parsed.package || parsed.paket || '-';
-
-      const row = [
-        new Date().toLocaleDateString('id-ID', {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-          timeZone: 'Asia/Jakarta',
-        }),                       // A: TANGGAL INPUT
-        parsed.channel,           // B: CHANNEL
-        parsed.dateCreated,       // C: DATE CREATED
-        parsed.scOrderNo,         // D: SC ORDER NO
-        parsed.workorder,         // E: WORKORDER
-        parsed.ao,                // F: AO
-        parsed.ncli,              // G: NCLI
-        parsed.serviceNo,         // H: SERVICE NO
-        parsed.address,           // I: ADDRESS
-        parsed.customerName,      // J: CUSTOMER NAME
-        parsed.workzone,          // K: WORKZONE
-        parsed.contactPhone,      // L: CONTACT PHONE
-        parsed.bookingDate,       // M: BOOKING DATE
-        packageInfo,              // N: PAKET/PACKAGE
-        parsed.odp,               // O: ODP
-        parsed.mitra,             // P: MITRA
-        parsed.symptom,           // Q: SYMPTOM
-        parsed.memo,              // R: MEMO
-        parsed.tikor,             // S: TIKOR
-        parsed.snOnt,             // T: SN ONT
-        parsed.nikOnt,            // U: NIK ONT
-        parsed.stbId,             // V: STB ID
-        parsed.nikStb,            // W: NIK STB
-        parsed.teknisi,           // X: TEKNISI
-      ];
-
-      await appendSheetData(AKTIVASI_SHEET, row);
-
-      let confirmMsg = '✅ Data aktivasi berhasil disimpan!\n\n';
-      confirmMsg += `Channel: ${parsed.channel}\n`;
-      confirmMsg += `Customer: ${parsed.customerName}\n`;
-      confirmMsg += `Service No: ${parsed.serviceNo}\n`;
-      confirmMsg += `Workzone: ${parsed.workzone}`;
-
-      return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
     }
 
     // === /progres ===
