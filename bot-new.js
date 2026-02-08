@@ -49,6 +49,7 @@ const auth = new google.auth.GoogleAuth({
 const sheets = google.sheets({ version: 'v4', auth });
 
 const PROGRES_SHEET = 'PROGRES PSB';
+const AKTIVASI_SHEET = 'AKTIVASI';
 const MASTER_SHEET = 'MASTER';  // Changed from USER_SHEET
 
 // === HELPER: Get sheet data ===
@@ -187,6 +188,71 @@ function parseProgres(text, userRow, username) {
   return data;
 }
 
+// === HELPER: Parse aktivasi data ===
+function parseAktivasi(text, username) {
+  let data = {
+    channel: '',
+    dateCreated: '',
+    scOrderNo: '',
+    workorder: '',
+    ao: '',
+    ncli: '',
+    serviceNo: '',
+    address: '',
+    customerName: '',
+    workzone: '',
+    contactPhone: '',
+    bookingDate: '',
+    paket: '',
+    package: '',
+    odp: '',
+    mitra: '',
+    symptom: '',
+    memo: '',
+    tikor: '',
+    snOnt: '',
+    nikOnt: '',
+    stbId: '',
+    nikStb: '',
+    teknisi: (username || '').replace('@', ''),
+  };
+
+  const patterns = {
+    channel: /CHANNEL\s*:\s*(.+?)(?=\n|$)/i,
+    dateCreated: /DATE\s*CREATED\s*:\s*(.+?)(?=\n|$)/i,
+    scOrderNo: /SC\s*ORDER\s*NO\s*:\s*(.+?)(?=\n|$)/i,
+    workorder: /WORKORDER\s*:\s*(.+?)(?=\n|$)/i,
+    ao: /AO\s*:\s*(.+?)(?=\n|$)/i,
+    ncli: /NCLI\s*:\s*(.+?)(?=\n|$)/i,
+    serviceNo: /SERVICE\s*NO\s*:\s*(.+?)(?=\n|$)/i,
+    address: /ADDRESS\s*:\s*(.+?)(?=\n|$)/i,
+    customerName: /CUSTOMER\s*NAME\s*:\s*(.+?)(?=\n|$)/i,
+    workzone: /WORKZONE\s*:\s*(.+?)(?=\n|$)/i,
+    contactPhone: /CONTACT\s*PHONE\s*:\s*(.+?)(?=\n|$)/i,
+    bookingDate: /BOOKING\s*DATE\s*:\s*(.+?)(?=\n|$)/i,
+    paket: /PAKET\s*:\s*(.+?)(?=\n|$)/i,
+    package: /PACKAGE\s*:\s*(.+?)(?=\n|$)/i,
+    odp: /ODP\s*:\s*(.+?)(?=\n|$)/i,
+    mitra: /MITRA\s*:\s*(.+?)(?=\n|$)/i,
+    symptom: /SYMPTOM\s*:\s*(.+?)(?=\n|$)/i,
+    memo: /MEMO\s*:\s*(.+?)(?=\n|$)/i,
+    tikor: /TIKOR\s*:\s*(.+?)(?=\n|$)/i,
+    snOnt: /SN\s*ONT\s*:\s*(.+?)(?=\n|$)/i,
+    nikOnt: /NIK\s*ONT\s*:\s*(.+?)(?=\n|$)/i,
+    stbId: /STB\s*ID\s*:\s*(.+?)(?=\n|$)/i,
+    nikStb: /NIK\s*STB\s*:\s*(.+?)(?=\n|$)/i,
+  };
+
+  for (const [key, pattern] of Object.entries(patterns)) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      data[key] = match[1].trim();
+    }
+  }
+
+  return data;
+}
+
 // === BOT SETUP ===
 const PORT = process.env.PORT || 3001;
 const RAILWAY_STATIC_URL = process.env.RAILWAY_STATIC_URL;
@@ -280,6 +346,73 @@ bot.on('message', async (msg) => {
       await appendSheetData(PROGRES_SHEET, row);
 
       let confirmMsg = '✅ Data berhasil disimpan!\n\n';
+      confirmMsg += `Channel: ${parsed.channel}\n`;
+      confirmMsg += `SC Order: ${parsed.scOrderNo}\n`;
+      confirmMsg += `Customer: ${parsed.customerName}\n`;
+      confirmMsg += `Workzone: ${parsed.workzone}`;
+
+      return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
+    }
+
+    // === /AKTIVASI ===
+    else if (/^\/AKTIVASI\b/i.test(text)) {
+      const inputText = text.replace(/^\/AKTIVASI\s*/i, '').trim();
+      if (!inputText) {
+        return sendTelegram(chatId, '❌ Silakan kirim data aktivasi setelah /AKTIVASI.', { reply_to_message_id: msgId });
+      }
+
+      const parsed = parseAktivasi(inputText, username);
+
+      const required = ['channel', 'customerName', 'serviceNo', 'workzone'];
+      const missing = required.filter(f => !parsed[f]);
+
+      if (missing.length > 0) {
+        return sendTelegram(chatId, `❌ Field wajib: ${missing.join(', ')}`, { reply_to_message_id: msgId });
+      }
+
+      // Tentukan package (gunakan preferensi PACKAGE untuk DIGIPOS, PAKET untuk BS/ES/GS)
+      const packageInfo = parsed.package || parsed.paket || '-';
+
+      const row = [
+        new Date().toLocaleDateString('id-ID', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'Asia/Jakarta',
+        }),                       // A: TANGGAL INPUT
+        parsed.channel,           // B: CHANNEL
+        parsed.dateCreated,       // C: DATE CREATED
+        parsed.scOrderNo,         // D: SC ORDER NO
+        parsed.workorder,         // E: WORKORDER
+        parsed.ao,                // F: AO
+        parsed.ncli,              // G: NCLI
+        parsed.serviceNo,         // H: SERVICE NO
+        parsed.address,           // I: ADDRESS
+        parsed.customerName,      // J: CUSTOMER NAME
+        parsed.workzone,          // K: WORKZONE
+        parsed.contactPhone,      // L: CONTACT PHONE
+        parsed.bookingDate,       // M: BOOKING DATE
+        packageInfo,              // N: PAKET/PACKAGE
+        parsed.odp,               // O: ODP
+        parsed.mitra,             // P: MITRA
+        parsed.symptom,           // Q: SYMPTOM
+        parsed.memo,              // R: MEMO
+        parsed.tikor,             // S: TIKOR
+        parsed.snOnt,             // T: SN ONT
+        parsed.nikOnt,            // U: NIK ONT
+        parsed.stbId,             // V: STB ID
+        parsed.nikStb,            // W: NIK STB
+        parsed.teknisi,           // X: TEKNISI
+      ];
+
+      await appendSheetData(AKTIVASI_SHEET, row);
+
+      let confirmMsg = '✅ Data aktivasi berhasil disimpan!\n\n';
+      confirmMsg += `Channel: ${parsed.channel}\n`;
+      confirmMsg += `Customer: ${parsed.customerName}\n`;
+      confirmMsg += `Service No: ${parsed.serviceNo}\n`;
+      confirmMsg += `Workzone: ${parsed.workzone}`;
 
       return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
     }
@@ -312,7 +445,7 @@ bot.on('message', async (msg) => {
       const entries = Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total);
 
-      let msg = `📊 <b>LAPORAN PROGRESS SURVEY TEKNISI - HI</b>\n<b>${today}</b>\n\n`;
+      let msg = `📊 <b>LAPORAN TEKNISI - HARI INI</b>\n<b>${today}</b>\n\n`;
       
       if (entries.length === 0) {
         msg += '<i>Belum ada data untuk hari ini</i>';
@@ -353,7 +486,7 @@ bot.on('message', async (msg) => {
       const entries = Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total);
 
-      let msg = '📊 <b>LAPORAN PROGRESS SURVEY TEKNISI - KESELURUHAN</b>\n\n';
+      let msg = '📊 <b>LAPORAN TEKNISI - KESELURUHAN</b>\n\n';
       
       if (entries.length === 0) {
         msg += '<i>Belum ada data</i>';
@@ -405,7 +538,7 @@ bot.on('message', async (msg) => {
       const entries = Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total);
 
-      let msg = `📍 <b>REKAP PROGRES BERDASARKAN WORKZONE - HI</b>\n<b>${today}</b>\n\n`;
+      let msg = `📍 <b>REKAP WORKZONE - HARI INI</b>\n<b>${today}</b>\n\n`;
       
       if (entries.length === 0) {
         msg += '<i>Belum ada data untuk hari ini</i>';
@@ -446,7 +579,7 @@ bot.on('message', async (msg) => {
       const entries = Object.entries(map)
         .sort((a, b) => b[1].total - a[1].total);
 
-      let msg = '📍 <b>REKAP PROGRES BERDASARKAN WORKZONE - KESELURUHAN</b>\n\n';
+      let msg = '📍 <b>REKAP WORKZONE - KESELURUHAN</b>\n\n';
       
       if (entries.length === 0) {
         msg += '<i>Belum ada data</i>';
@@ -476,9 +609,10 @@ bot.on('message', async (msg) => {
 
 Commands:
 /UPDATE - Input progres (di group)
-/progres - Laporan teknisi HI
+/AKTIVASI - Input data aktivasi (di group)
+/progres - Laporan teknisi HARI INI
 /allprogres - Laporan teknisi KESELURUHAN
-/cek - Rekap workzone HI
+/cek - Rekap workzone HARI INI
 /allcek - Rekap workzone KESELURUHAN
 /help - Bantuan
 
