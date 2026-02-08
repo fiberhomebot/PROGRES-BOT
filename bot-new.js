@@ -425,11 +425,7 @@ bot.on('message', async (msg) => {
         console.log('📝 Row data to append:', row);
         await appendSheetData(PROGRES_SHEET, row);
 
-        let confirmMsg = '✅ Data aktivasi berhasil disimpan!\n\n';
-        confirmMsg += `Channel: ${parsed.channel}\n`;
-        confirmMsg += `Customer: ${parsed.customerName}\n`;
-        confirmMsg += `Service No: ${parsed.serviceNo}\n`;
-        confirmMsg += `Workzone: ${parsed.workzone}`;
+        let confirmMsg = '✅ Data aktivasi berhasil disimpan!\n\n';;
 
         return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
       } catch (aktivasiErr) {
