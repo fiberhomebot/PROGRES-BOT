@@ -105,27 +105,42 @@ async function sendTelegram(chatId, text, options = {}) {
   }
 }
 
-// === HELPER: Get user data ===
-async function getUserData(username) {
+// === HELPER: Get user role ===
+async function getUserRole(username) {
   try {
     const data = await getSheetData(MASTER_SHEET);
-    console.log(`Looking for user: @${username}`);
     for (let i = 1; i < data.length; i++) {
-      // MASTER Sheet columns: ID TELEGRAM (7), USERNAME TELEGRAM (8), ROLE (9), STATUS (10), SEKTOR (11), etc
       const sheetUser = (data[i][8] || '').replace('@', '').toLowerCase().trim();
       const inputUser = (username || '').replace('@', '').toLowerCase().trim();
       const status = (data[i][10] || '').toUpperCase().trim();
+      const role = (data[i][9] || '').toUpperCase().trim();
       
       if (sheetUser === inputUser && status === 'AKTIF') {
-        console.log(`✅ User found: ${sheetUser} (Status: ${status})`);
-        return data[i];
+        return role;
       }
     }
-    console.log(`❌ User not found: @${username}`);
     return null;
   } catch (error) {
-    console.error('Error getting user:', error.message);
+    console.error('Error getting user role:', error.message);
     return null;
+  }
+}
+
+// === HELPER: Check authorization ===
+async function checkAuthorization(username, requiredRoles = []) {
+  try {
+    const userRole = await getUserRole(username);
+    if (!userRole) {
+      return { authorized: false, role: null, message: '❌ Anda tidak terdaftar di sistem.' };
+    }
+    
+    if (requiredRoles.length > 0 && !requiredRoles.includes(userRole)) {
+      return { authorized: false, role: userRole, message: `❌ Akses ditolak. Role ${userRole} tidak memiliki izin untuk command ini.` };
+    }
+    
+    return { authorized: true, role: userRole };
+  } catch (error) {
+    return { authorized: false, role: null, message: '❌ Terjadi kesalahan saat verifikasi.' };
   }
 }
 
@@ -302,9 +317,9 @@ bot.on('message', async (msg) => {
   try {
     // === /UPDATE ===
     if (/^\/UPDATE\b/i.test(text)) {
-      const user = await getUserData(username);
-      if (!user) {
-        return sendTelegram(chatId, '❌ Anda tidak terdaftar sebagai user aktif.', { reply_to_message_id: msgId });
+      const auth = await checkAuthorization(username, ['USER', 'ADMIN']);
+      if (!auth.authorized) {
+        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
       }
 
       const inputText = text.replace(/^\/UPDATE\s*/i, '').trim();
@@ -312,6 +327,7 @@ bot.on('message', async (msg) => {
         return sendTelegram(chatId, '❌ Silakan kirim data progres setelah /UPDATE.', { reply_to_message_id: msgId });
       }
 
+      const user = await getUserData(username);
       const parsed = parseProgres(inputText, user, username);
 
       const required = ['channel', 'scOrderNo', 'serviceNo', 'customerName', 'workzone'];
@@ -345,12 +361,21 @@ bot.on('message', async (msg) => {
       await appendSheetData(PROGRES_SHEET, row);
 
       let confirmMsg = '✅ Data berhasil disimpan!\n\n';
+      confirmMsg += `Channel: ${parsed.channel}\n`;
+      confirmMsg += `SC Order: ${parsed.scOrderNo}\n`;
+      confirmMsg += `Customer: ${parsed.customerName}\n`;
+      confirmMsg += `Workzone: ${parsed.workzone}`;
 
       return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
     }
 
     // === /AKTIVASI ===
     else if (/^\/AKTIVASI\b/i.test(text)) {
+      const auth = await checkAuthorization(username, ['USER', 'ADMIN']);
+      if (!auth.authorized) {
+        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+      }
+
       try {
         const inputText = text.replace(/^\/AKTIVASI\s*/i, '').trim();
         if (!inputText) {
@@ -414,8 +439,122 @@ bot.on('message', async (msg) => {
       }
     }
 
+    // === /today [TEKNISI] ===
+    else if (/^\/today\b/i.test(text)) {
+      const auth = await checkAuthorization(username, ['ADMIN']);
+      if (!auth.authorized) {
+        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+      }
+
+      const args = text.replace(/^\/today\s*/i, '').trim();
+      if (!args) {
+        return sendTelegram(chatId, '❌ Format: /today TEKNISI_ID', { reply_to_message_id: msgId });
+      }
+
+      const today = new Date().toLocaleDateString('id-ID', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'Asia/Jakarta',
+      });
+
+      const data = await getSheetData(PROGRES_SHEET);
+      let map = {};
+
+      for (let i = 1; i < data.length; i++) {
+        const dateCreated = (data[i][0] || '').trim();  // Column A
+        if (dateCreated !== today) continue;
+        
+        const teknisi = (data[i][17] || '-').trim();  // Column R
+        if (teknisi !== args) continue;
+        
+        const symptom = (data[i][10] || '-').trim();  // Column K
+        const ao = (data[i][3] || '-').trim();  // Column D (AO)
+
+        if (!map[symptom]) map[symptom] = [];
+        map[symptom].push(ao);
+      }
+
+      const entries = Object.entries(map)
+        .sort((a, b) => b[1].length - a[1].length);
+
+      let totalWO = Object.values(map).reduce((sum, arr) => sum + arr.length, 0);
+      let msg = `📋 <b>PROGRES HARI INI - ${args}</b>\n\n`;
+      msg += `<b>Total: ${totalWO} WO</b>\n`;
+      
+      if (entries.length === 0) {
+        msg += '<i>Belum ada data untuk hari ini</i>';
+      } else {
+        entries.forEach((entry) => {
+          const [symptom, aos] = entry;
+          msg += `   • <b>${symptom}: ${aos.length}</b>\n`;
+          aos.forEach(ao => {
+            msg += `${ao}\n`;
+          });
+          msg += '\n';
+        });
+      }
+
+      return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
+    }
+
+    // === /all [TEKNISI] ===
+    else if (/^\/all\b/i.test(text)) {
+      const auth = await checkAuthorization(username, ['ADMIN']);
+      if (!auth.authorized) {
+        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+      }
+
+      const args = text.replace(/^\/all\s*/i, '').trim();
+      if (!args) {
+        return sendTelegram(chatId, '❌ Format: /all TEKNISI_ID', { reply_to_message_id: msgId });
+      }
+
+      const data = await getSheetData(PROGRES_SHEET);
+      let map = {};
+
+      for (let i = 1; i < data.length; i++) {
+        const teknisi = (data[i][17] || '-').trim();  // Column R
+        if (teknisi !== args) continue;
+        
+        const symptom = (data[i][10] || '-').trim();  // Column K
+        const ao = (data[i][3] || '-').trim();  // Column D (AO)
+
+        if (!map[symptom]) map[symptom] = [];
+        map[symptom].push(ao);
+      }
+
+      const entries = Object.entries(map)
+        .sort((a, b) => b[1].length - a[1].length);
+
+      let totalWO = Object.values(map).reduce((sum, arr) => sum + arr.length, 0);
+      let msg = `📋 <b>SELURUH PROGRES - ${args}</b>\n\n`;
+      msg += `<b>Total: ${totalWO} WO</b>\n`;
+      
+      if (entries.length === 0) {
+        msg += '<i>Belum ada data</i>';
+      } else {
+        entries.forEach((entry) => {
+          const [symptom, aos] = entry;
+          msg += `   • <b>${symptom}: ${aos.length}</b>\n`;
+          aos.forEach(ao => {
+            msg += `${ao}\n`;
+          });
+          msg += '\n';
+        });
+      }
+
+      return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
+    }
+
     // === /progres ===
     else if (/^\/progres\b/i.test(text)) {
+      const auth = await checkAuthorization(username, ['ADMIN']);
+      if (!auth.authorized) {
+        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+      }
+
       const today = new Date().toLocaleDateString('id-ID', {
         weekday: 'long',
         day: 'numeric',
@@ -468,6 +607,11 @@ bot.on('message', async (msg) => {
 
     // === /allprogres ===
     else if (/^\/allprogres\b/i.test(text)) {
+      const auth = await checkAuthorization(username, ['ADMIN']);
+      if (!auth.authorized) {
+        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+      }
+
       const data = await getSheetData(PROGRES_SHEET);
       let map = {};
 
@@ -509,6 +653,11 @@ bot.on('message', async (msg) => {
 
     // === /cek ===
     else if (/^\/cek\b/i.test(text)) {
+      const auth = await checkAuthorization(username, ['ADMIN']);
+      if (!auth.authorized) {
+        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+      }
+
       const today = new Date().toLocaleDateString('id-ID', {
         weekday: 'long',
         day: 'numeric',
@@ -561,6 +710,11 @@ bot.on('message', async (msg) => {
 
     // === /allcek ===
     else if (/^\/allcek\b/i.test(text)) {
+      const auth = await checkAuthorization(username, ['ADMIN']);
+      if (!auth.authorized) {
+        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+      }
+
       const data = await getSheetData(PROGRES_SHEET);
       let map = {};
 
@@ -602,11 +756,18 @@ bot.on('message', async (msg) => {
 
     // === /help ===
     else if (/^\/(help|start)\b/i.test(text)) {
+      const auth = await checkAuthorization(username);
+      if (!auth.authorized) {
+        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+      }
+
       const helpMsg = `🤖 Bot Progres PSB
 
 Commands:
 /UPDATE - Input progres (di group)
 /AKTIVASI - Input data aktivasi (di group)
+/today TEKNISI_ID - Progres hari ini (teknisi)
+/all TEKNISI_ID - Seluruh progres (teknisi)
 /progres - Laporan teknisi HARI INI
 /allprogres - Laporan teknisi KESELURUHAN
 /cek - Rekap workzone HARI INI
@@ -614,6 +775,8 @@ Commands:
 /help - Bantuan
 
 Contoh:
+/today FH_ABDULLAH_16891190
+/all FH_ABDULLAH_16891190
 /progres
 /allprogres
 /cek
