@@ -49,7 +49,6 @@ const auth = new google.auth.GoogleAuth({
 const sheets = google.sheets({ version: 'v4', auth });
 
 const PROGRES_SHEET = 'PROGRES PSB';
-const AKTIVASI_SHEET = 'AKTIVASI';
 const MASTER_SHEET = 'MASTER';  // Changed from USER_SHEET
 
 // === HELPER: Get sheet data ===
@@ -382,34 +381,28 @@ bot.on('message', async (msg) => {
             month: 'long',
             year: 'numeric',
             timeZone: 'Asia/Jakarta',
-          }),                       // A: TANGGAL INPUT
+          }),                       // A: DATE CREATED
           parsed.channel,           // B: CHANNEL
-          parsed.dateCreated,       // C: DATE CREATED
-          parsed.scOrderNo,         // D: SC ORDER NO
-          parsed.workorder,         // E: WORKORDER
-          parsed.ao,                // F: AO
-          parsed.ncli,              // G: NCLI
-          parsed.serviceNo,         // H: SERVICE NO
-          parsed.address,           // I: ADDRESS
-          parsed.customerName,      // J: CUSTOMER NAME
-          parsed.workzone,          // K: WORKZONE
-          parsed.contactPhone,      // L: CONTACT PHONE
-          parsed.bookingDate,       // M: BOOKING DATE
-          packageInfo,              // N: PAKET/PACKAGE
-          parsed.odp,               // O: ODP
-          parsed.mitra,             // P: MITRA
-          parsed.symptom,           // Q: SYMPTOM
-          parsed.memo,              // R: MEMO
-          parsed.tikor,             // S: TIKOR
-          parsed.snOnt,             // T: SN ONT
-          parsed.nikOnt,            // U: NIK ONT
-          parsed.stbId,             // V: STB ID
-          parsed.nikStb,            // W: NIK STB
-          parsed.teknisi,           // X: TEKNISI
+          parsed.workorder,         // C: WORKORDER
+          parsed.ao,                // D: AO
+          parsed.scOrderNo,         // E: SC ORDER NO
+          parsed.serviceNo,         // F: SERVICE NO
+          parsed.customerName,      // G: CUSTOMER NAME
+          parsed.workzone,          // H: WORKZONE
+          parsed.contactPhone,      // I: CONTACT PHONE
+          parsed.odp,               // J: ODP
+          parsed.symptom,           // K: SYMPTOM
+          parsed.memo,              // L: MEMO
+          parsed.tikor,             // M: TIKOR
+          parsed.snOnt,             // N: SN ONT
+          parsed.nikOnt,            // O: NIK ONT
+          parsed.stbId,             // P: STB ID
+          parsed.nikStb,            // Q: NIK STB
+          parsed.teknisi,           // R: NAMA TELEGRAM TEKNISI
         ];
 
         console.log('📝 Row data to append:', row);
-        await appendSheetData(AKTIVASI_SHEET, row);
+        await appendSheetData(PROGRES_SHEET, row);
 
         let confirmMsg = '✅ Data aktivasi berhasil disimpan!\n\n';
         confirmMsg += `Channel: ${parsed.channel}\n`;
