@@ -383,8 +383,27 @@ if (USE_WEBHOOK) {
     console.log(`✅ Server running on port ${PORT}`);
   });
 } else {
-  bot = new TelegramBot(TOKEN, { polling: true });
-  console.log('✅ Bot running in polling mode');
+  // Polling mode dengan optimized settings untuk multiple groups
+  bot = new TelegramBot(TOKEN, { 
+    polling: {
+      interval: 300,        // Check every 300ms (faster response)
+      autoStart: true,
+      params: {
+        timeout: 10,        // Keep-alive timeout
+        allowed_updates: ['message']  // Only get message updates
+      }
+    }
+  });
+  console.log('✅ Bot running in polling mode (optimized for multiple groups)');
+  
+  // Error handler untuk polling
+  bot.on('polling_error', (error) => {
+    if (error.code === 'EFATAL') {
+      console.error('❌ Polling fatal error:', error.message);
+    } else {
+      console.error('⚠️ Polling error:', error.message);
+    }
+  });
 }
 
 // === MESSAGE HANDLER ===
@@ -393,6 +412,8 @@ bot.on('message', async (msg) => {
   const msgId = msg.message_id;
   const text = (msg.text || '').trim();
   const username = msg.from.username || '';
+  const groupName = msg.chat.title || msg.chat.first_name || `ID:${chatId}`;
+  const groupType = msg.chat.type; // 'group', 'supergroup', 'private'
 
   // Early return untuk pesan kosong atau non-text
   if (!text) {
@@ -404,7 +425,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  console.log(`📨 [${username}@${msg.chat.title || chatId}] ${text.substring(0, 60)}`);
+  console.log(`📨 [${groupType}] ${groupName} | [@${username}] ${text.substring(0, 60)}`);
 
   try {
     // === /UPDATE ===
@@ -920,4 +941,10 @@ process.on('unhandledRejection', (reason) => {
 });
 
 console.log('\n🚀 Bot Progres PSB started!');
-console.log(`Mode: ${USE_WEBHOOK ? 'Webhook' : 'Polling'}`);
+console.log(`Mode: ${USE_WEBHOOK ? 'Webhook' : 'Polling (Optimized)'}`);
+console.log('═'.repeat(50));
+console.log('✅ Multi-Group Support Enabled');
+console.log('✅ Auto-Cache Enabled (5 min expiry)');
+console.log('✅ Timeout Protection Enabled');
+console.log('✅ Error Fallback Enabled');
+console.log('═'.repeat(50));
