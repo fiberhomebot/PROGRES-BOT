@@ -51,16 +51,67 @@ const sheets = google.sheets({ version: 'v4', auth });
 const PROGRES_SHEET = 'PROGRES PSB';
 const MASTER_SHEET = 'MASTER';  // Changed from USER_SHEET
 
-// === HELPER: Get sheet data ===
-async function getSheetData(sheetName) {
+// === CACHING LAYER ===
+const cache = {
+  masterData: null,
+  masterDataTime: 0,
+  progresData: null,
+  progresDataTime: 0,
+  cacheExpiry: 5 * 60 * 1000, // 5 menit
+};
+
+// === HELPER: Get sheet data with caching ===
+async function getSheetData(sheetName, useCache = true) {
   try {
+    // Cek cache untuk MASTER_SHEET (sering diquery)
+    if (useCache && sheetName === MASTER_SHEET && cache.masterData) {
+      if (Date.now() - cache.masterDataTime < cache.cacheExpiry) {
+        console.log('📦 Using cached MASTER_SHEET');
+        return cache.masterData;
+      }
+    }
+
+    // Cek cache untuk PROGRES_SHEET
+    if (useCache && sheetName === PROGRES_SHEET && cache.progresData) {
+      if (Date.now() - cache.progresDataTime < cache.cacheExpiry) {
+        console.log('📦 Using cached PROGRES_SHEET');
+        return cache.progresData;
+      }
+    }
+
+    // Fetch dari API
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000); // 15 detik timeout
+
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
       range: sheetName,
     });
-    return res.data.values || [];
+
+    clearTimeout(timeout);
+    const data = res.data.values || [];
+
+    // Cache hasil
+    if (sheetName === MASTER_SHEET) {
+      cache.masterData = data;
+      cache.masterDataTime = Date.now();
+    } else if (sheetName === PROGRES_SHEET) {
+      cache.progresData = data;
+      cache.progresDataTime = Date.now();
+    }
+
+    return data;
   } catch (error) {
     console.error(`Error reading ${sheetName}:`, error.message);
+    // Return cache meskipun expired jika API error
+    if (sheetName === MASTER_SHEET && cache.masterData) {
+      console.log('⚠️ API error, fallback ke cached MASTER_SHEET');
+      return cache.masterData;
+    }
+    if (sheetName === PROGRES_SHEET && cache.progresData) {
+      console.log('⚠️ API error, fallback ke cached PROGRES_SHEET');
+      return cache.progresData;
+    }
     throw error;
   }
 }
@@ -103,6 +154,16 @@ async function sendTelegram(chatId, text, options = {}) {
   } catch (error) {
     console.error('Error sending message:', error.message);
   }
+}
+
+// === HELPER: Wrap with timeout ===
+function withTimeout(promise, ms = 10000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout - Google API response too slow')), ms)
+    )
+  ]);
 }
 
 // === HELPER: Get user role ===
@@ -149,7 +210,7 @@ async function getUserData(username) {
 // === HELPER: Check authorization ===
 async function checkAuthorization(username, requiredRoles = []) {
   try {
-    const userRole = await getUserRole(username);
+    const userRole = await withTimeout(getUserRole(username), 8000);
     if (!userRole) {
       return { authorized: false, role: null, message: '❌ Anda tidak terdaftar di sistem.' };
     }
@@ -160,7 +221,8 @@ async function checkAuthorization(username, requiredRoles = []) {
     
     return { authorized: true, role: userRole };
   } catch (error) {
-    return { authorized: false, role: null, message: '❌ Terjadi kesalahan saat verifikasi.' };
+    console.error('Authorization error:', error.message);
+    return { authorized: false, role: null, message: '❌ Terjadi kesalahan saat verifikasi. Server sedang sibuk.' };
   }
 }
 
@@ -332,68 +394,82 @@ bot.on('message', async (msg) => {
   const text = (msg.text || '').trim();
   const username = msg.from.username || '';
 
-  console.log(`📨 [${username}] ${text.substring(0, 60)}`);
+  // Early return untuk pesan kosong atau non-text
+  if (!text) {
+    return;
+  }
+
+  // Early return untuk pesan yang bukan command
+  if (!text.startsWith('/')) {
+    return;
+  }
+
+  console.log(`📨 [${username}@${msg.chat.title || chatId}] ${text.substring(0, 60)}`);
 
   try {
     // === /UPDATE ===
     if (/^\/UPDATE\b/i.test(text)) {
-      const auth = await checkAuthorization(username, ['USER', 'ADMIN']);
-      if (!auth.authorized) {
-        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+      try {
+        const auth = await checkAuthorization(username, ['USER', 'ADMIN']);
+        if (!auth.authorized) {
+          return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+        }
+
+        const inputText = text.replace(/^\/UPDATE\s*/i, '').trim();
+        if (!inputText) {
+          return sendTelegram(chatId, '❌ Silakan kirim data progres setelah /UPDATE.', { reply_to_message_id: msgId });
+        }
+
+        const user = await withTimeout(getUserData(username), 8000);
+        const parsed = parseProgres(inputText, user, username);
+
+        const required = ['channel', 'scOrderNo', 'serviceNo', 'customerName', 'workzone'];
+        const missing = required.filter(f => !parsed[f]);
+
+        if (missing.length > 0) {
+          return sendTelegram(chatId, `❌ Field wajib: ${missing.join(', ')}`, { reply_to_message_id: msgId });
+        }
+
+        const row = [
+          parsed.dateCreated,    // A: DATE CREATED
+          parsed.channel,        // B: CHANNEL
+          parsed.workorder,      // C: WORKORDER
+          parsed.ao,             // D: AO
+          parsed.scOrderNo,      // E: SC ORDER NO
+          parsed.serviceNo,      // F: SERVICE NO
+          parsed.customerName,   // G: CUSTOMER NAME
+          parsed.workzone,       // H: WORKZONE
+          parsed.contactPhone,   // I: CONTACT PHONE
+          parsed.odp,            // J: ODP
+          parsed.symptom,        // K: SYMPTOM
+          parsed.memo,           // L: MEMO
+          parsed.tikor,          // M: TIKOR
+          parsed.snOnt,          // N: SN ONT
+          parsed.nikOnt,         // O: NIK ONT
+          parsed.stbId,          // P: STB ID
+          parsed.nikStb,         // Q: NIK STB
+          parsed.teknisi,        // R: NAMA TELEGRAM TEKNISI
+        ];
+
+        await withTimeout(appendSheetData(PROGRES_SHEET, row), 10000);
+
+        let confirmMsg = '✅ Data berhasil disimpan!\n\n';
+
+        return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
+      } catch (updateErr) {
+        console.error('❌ /UPDATE Error:', updateErr.message);
+        return sendTelegram(chatId, `❌ Error: ${updateErr.message}. Silakan coba lagi.`, { reply_to_message_id: msgId });
       }
-
-      const inputText = text.replace(/^\/UPDATE\s*/i, '').trim();
-      if (!inputText) {
-        return sendTelegram(chatId, '❌ Silakan kirim data progres setelah /UPDATE.', { reply_to_message_id: msgId });
-      }
-
-      const user = await getUserData(username);
-      const parsed = parseProgres(inputText, user, username);
-
-      const required = ['channel', 'scOrderNo', 'serviceNo', 'customerName', 'workzone'];
-      const missing = required.filter(f => !parsed[f]);
-
-      if (missing.length > 0) {
-        return sendTelegram(chatId, `❌ Field wajib: ${missing.join(', ')}`, { reply_to_message_id: msgId });
-      }
-
-      const row = [
-        parsed.dateCreated,    // A: DATE CREATED
-        parsed.channel,        // B: CHANNEL
-        parsed.workorder,      // C: WORKORDER
-        parsed.ao,             // D: AO
-        parsed.scOrderNo,      // E: SC ORDER NO
-        parsed.serviceNo,      // F: SERVICE NO
-        parsed.customerName,   // G: CUSTOMER NAME
-        parsed.workzone,       // H: WORKZONE
-        parsed.contactPhone,   // I: CONTACT PHONE
-        parsed.odp,            // J: ODP
-        parsed.symptom,        // K: SYMPTOM
-        parsed.memo,           // L: MEMO
-        parsed.tikor,          // M: TIKOR
-        parsed.snOnt,          // N: SN ONT
-        parsed.nikOnt,         // O: NIK ONT
-        parsed.stbId,          // P: STB ID
-        parsed.nikStb,         // Q: NIK STB
-        parsed.teknisi,        // R: NAMA TELEGRAM TEKNISI
-      ];
-
-      await appendSheetData(PROGRES_SHEET, row);
-
-      let confirmMsg = '✅ Data berhasil disimpan!\n\n';
-
-
-      return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
     }
 
     // === /AKTIVASI ===
     else if (/^\/AKTIVASI\b/i.test(text)) {
-      const auth = await checkAuthorization(username, ['USER', 'ADMIN']);
-      if (!auth.authorized) {
-        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
-      }
-
       try {
+        const auth = await checkAuthorization(username, ['USER', 'ADMIN']);
+        if (!auth.authorized) {
+          return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+        }
+
         const inputText = text.replace(/^\/AKTIVASI\s*/i, '').trim();
         if (!inputText) {
           return sendTelegram(chatId, '❌ Silakan kirim data aktivasi setelah /AKTIVASI.', { reply_to_message_id: msgId });
@@ -440,91 +516,97 @@ bot.on('message', async (msg) => {
         ];
 
         console.log('📝 Row data to append:', row);
-        await appendSheetData(PROGRES_SHEET, row);
+        await withTimeout(appendSheetData(PROGRES_SHEET, row), 10000);
 
-        let confirmMsg = '✅ Data aktivasi berhasil disimpan!\n\n';;
+        let confirmMsg = '✅ Data aktivasi berhasil disimpan!\n\n';
 
         return sendTelegram(chatId, confirmMsg, { reply_to_message_id: msgId });
       } catch (aktivasiErr) {
-        console.error('❌ /AKTIVASI Error:', aktivasiErr);
+        console.error('❌ /AKTIVASI Error:', aktivasiErr.message);
         console.error('Stack:', aktivasiErr.stack);
-        return sendTelegram(chatId, `❌ Error: ${aktivasiErr.message}`, { reply_to_message_id: msgId });
+        return sendTelegram(chatId, `❌ Error: ${aktivasiErr.message}. Silakan coba lagi.`, { reply_to_message_id: msgId });
       }
     }
 
     // === /today [TEKNISI] ===
     else if (/^\/today\b/i.test(text)) {
-      const auth = await checkAuthorization(username, ['ADMIN']);
-      if (!auth.authorized) {
-        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
-      }
+      try {
+        const auth = await checkAuthorization(username, ['ADMIN']);
+        if (!auth.authorized) {
+          return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+        }
 
-      const args = text.replace(/^\/today\s*/i, '').trim();
-      if (!args) {
-        return sendTelegram(chatId, '❌ Format: /today TEKNISI_ID', { reply_to_message_id: msgId });
-      }
+        const args = text.replace(/^\/today\s*/i, '').trim();
+        if (!args) {
+          return sendTelegram(chatId, '❌ Format: /today TEKNISI_ID', { reply_to_message_id: msgId });
+        }
 
-      const today = new Date().toLocaleDateString('id-ID', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        timeZone: 'Asia/Jakarta',
-      });
-
-      const data = await getSheetData(PROGRES_SHEET);
-      let map = {};
-
-      for (let i = 1; i < data.length; i++) {
-        const dateCreated = (data[i][0] || '').trim();  // Column A
-        if (dateCreated !== today) continue;
-        
-        const teknisi = (data[i][17] || '-').trim();  // Column R
-        if (teknisi !== args) continue;
-        
-        const symptom = (data[i][10] || '-').trim();  // Column K
-        const ao = (data[i][3] || '-').trim();  // Column D (AO)
-
-        if (!map[symptom]) map[symptom] = [];
-        map[symptom].push(ao);
-      }
-
-      const entries = Object.entries(map)
-        .sort((a, b) => b[1].length - a[1].length);
-
-      let totalWO = Object.values(map).reduce((sum, arr) => sum + arr.length, 0);
-      let msg = `📋 <b>PROGRES HARI INI - ${args}</b>\n\n`;
-      msg += `<b>Total: ${totalWO} WO</b>\n`;
-      
-      if (entries.length === 0) {
-        msg += '<i>Belum ada data untuk hari ini</i>';
-      } else {
-        entries.forEach((entry) => {
-          const [symptom, aos] = entry;
-          msg += `   • <b>${symptom}: ${aos.length}</b>\n`;
-          aos.forEach(ao => {
-            msg += `${ao}\n`;
-          });
-          msg += '\n';
+        const today = new Date().toLocaleDateString('id-ID', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'Asia/Jakarta',
         });
-      }
 
-      return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
+        const data = await withTimeout(getSheetData(PROGRES_SHEET), 10000);
+        let map = {};
+
+        for (let i = 1; i < data.length; i++) {
+          const dateCreated = (data[i][0] || '').trim();  // Column A
+          if (dateCreated !== today) continue;
+          
+          const teknisi = (data[i][17] || '-').trim();  // Column R
+          if (teknisi !== args) continue;
+          
+          const symptom = (data[i][10] || '-').trim();  // Column K
+          const ao = (data[i][3] || '-').trim();  // Column D (AO)
+
+          if (!map[symptom]) map[symptom] = [];
+          map[symptom].push(ao);
+        }
+
+        const entries = Object.entries(map)
+          .sort((a, b) => b[1].length - a[1].length);
+
+        let totalWO = Object.values(map).reduce((sum, arr) => sum + arr.length, 0);
+        let msg = `📋 <b>PROGRES HARI INI - ${args}</b>\n\n`;
+        msg += `<b>Total: ${totalWO} WO</b>\n`;
+        
+        if (entries.length === 0) {
+          msg += '<i>Belum ada data untuk hari ini</i>';
+        } else {
+          entries.forEach((entry) => {
+            const [symptom, aos] = entry;
+            msg += `   • <b>${symptom}: ${aos.length}</b>\n`;
+            aos.forEach(ao => {
+              msg += `${ao}\n`;
+            });
+            msg += '\n';
+          });
+        }
+
+        return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
+      } catch (err) {
+        console.error('❌ /today Error:', err.message);
+        return sendTelegram(chatId, `❌ Error: ${err.message}. Server sedang sibuk.`, { reply_to_message_id: msgId });
+      }
     }
 
     // === /all [TEKNISI] ===
     else if (/^\/all\b/i.test(text)) {
-      const auth = await checkAuthorization(username, ['ADMIN']);
-      if (!auth.authorized) {
-        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
-      }
+      try {
+        const auth = await checkAuthorization(username, ['ADMIN']);
+        if (!auth.authorized) {
+          return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+        }
 
-      const args = text.replace(/^\/all\s*/i, '').trim();
-      if (!args) {
-        return sendTelegram(chatId, '❌ Format: /all TEKNISI_ID', { reply_to_message_id: msgId });
-      }
+        const args = text.replace(/^\/all\s*/i, '').trim();
+        if (!args) {
+          return sendTelegram(chatId, '❌ Format: /all TEKNISI_ID', { reply_to_message_id: msgId });
+        }
 
-      const data = await getSheetData(PROGRES_SHEET);
+        const data = await withTimeout(getSheetData(PROGRES_SHEET), 10000);
       let map = {};
 
       for (let i = 1; i < data.length; i++) {
@@ -559,24 +641,29 @@ bot.on('message', async (msg) => {
       }
 
       return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
+      } catch (err) {
+        console.error('❌ /all Error:', err.message);
+        return sendTelegram(chatId, `❌ Error: ${err.message}. Server sedang sibuk.`, { reply_to_message_id: msgId });
+      }
     }
 
     // === /progres ===
     else if (/^\/progres\b/i.test(text)) {
-      const auth = await checkAuthorization(username, ['ADMIN']);
-      if (!auth.authorized) {
-        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
-      }
+      try {
+        const auth = await checkAuthorization(username, ['ADMIN']);
+        if (!auth.authorized) {
+          return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+        }
 
-      const today = new Date().toLocaleDateString('id-ID', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        timeZone: 'Asia/Jakarta',
-      });
+        const today = new Date().toLocaleDateString('id-ID', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'Asia/Jakarta',
+        });
 
-      const data = await getSheetData(PROGRES_SHEET);
+        const data = await withTimeout(getSheetData(PROGRES_SHEET), 10000);
       let map = {};
 
       for (let i = 1; i < data.length; i++) {
@@ -616,16 +703,21 @@ bot.on('message', async (msg) => {
       }
 
       return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
+      } catch (err) {
+        console.error('❌ /progres Error:', err.message);
+        return sendTelegram(chatId, `❌ Error: ${err.message}. Server sedang sibuk.`, { reply_to_message_id: msgId });
+      }
     }
 
     // === /allprogres ===
     else if (/^\/allprogres\b/i.test(text)) {
-      const auth = await checkAuthorization(username, ['ADMIN']);
-      if (!auth.authorized) {
-        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
-      }
+      try {
+        const auth = await checkAuthorization(username, ['ADMIN']);
+        if (!auth.authorized) {
+          return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+        }
 
-      const data = await getSheetData(PROGRES_SHEET);
+        const data = await withTimeout(getSheetData(PROGRES_SHEET), 10000);
       let map = {};
 
       for (let i = 1; i < data.length; i++) {
@@ -662,24 +754,29 @@ bot.on('message', async (msg) => {
       }
 
       return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
+      } catch (err) {
+        console.error('❌ /allprogres Error:', err.message);
+        return sendTelegram(chatId, `❌ Error: ${err.message}. Server sedang sibuk.`, { reply_to_message_id: msgId });
+      }
     }
 
     // === /cek ===
     else if (/^\/cek\b/i.test(text)) {
-      const auth = await checkAuthorization(username, ['ADMIN']);
-      if (!auth.authorized) {
-        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
-      }
+      try {
+        const auth = await checkAuthorization(username, ['ADMIN']);
+        if (!auth.authorized) {
+          return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+        }
 
-      const today = new Date().toLocaleDateString('id-ID', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        timeZone: 'Asia/Jakarta',
-      });
+        const today = new Date().toLocaleDateString('id-ID', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'Asia/Jakarta',
+        });
 
-      const data = await getSheetData(PROGRES_SHEET);
+        const data = await withTimeout(getSheetData(PROGRES_SHEET), 10000);
       let map = {};
 
       for (let i = 1; i < data.length; i++) {
@@ -719,16 +816,21 @@ bot.on('message', async (msg) => {
       }
 
       return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
+      } catch (err) {
+        console.error('❌ /cek Error:', err.message);
+        return sendTelegram(chatId, `❌ Error: ${err.message}. Server sedang sibuk.`, { reply_to_message_id: msgId });
+      }
     }
 
     // === /allcek ===
     else if (/^\/allcek\b/i.test(text)) {
-      const auth = await checkAuthorization(username, ['ADMIN']);
-      if (!auth.authorized) {
-        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
-      }
+      try {
+        const auth = await checkAuthorization(username, ['ADMIN']);
+        if (!auth.authorized) {
+          return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+        }
 
-      const data = await getSheetData(PROGRES_SHEET);
+        const data = await withTimeout(getSheetData(PROGRES_SHEET), 10000);
       let map = {};
 
       for (let i = 1; i < data.length; i++) {
@@ -765,16 +867,21 @@ bot.on('message', async (msg) => {
       }
 
       return sendTelegram(chatId, msg, { reply_to_message_id: msgId });
+      } catch (err) {
+        console.error('❌ /allcek Error:', err.message);
+        return sendTelegram(chatId, `❌ Error: ${err.message}. Server sedang sibuk.`, { reply_to_message_id: msgId });
+      }
     }
 
     // === /help ===
     else if (/^\/(help|start)\b/i.test(text)) {
-      const auth = await checkAuthorization(username);
-      if (!auth.authorized) {
-        return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
-      }
+      try {
+        const auth = await checkAuthorization(username);
+        if (!auth.authorized) {
+          return sendTelegram(chatId, auth.message, { reply_to_message_id: msgId });
+        }
 
-      const helpMsg = `🤖 Bot Progres PSB
+        const helpMsg = `🤖 Bot Progres PSB
 
 Commands:
 /UPDATE - Input progres (di group)
@@ -795,7 +902,11 @@ Contoh:
 /cek
 /allcek`;
 
-      return sendTelegram(chatId, helpMsg, { reply_to_message_id: msgId });
+        return sendTelegram(chatId, helpMsg, { reply_to_message_id: msgId });
+      } catch (err) {
+        console.error('❌ /help Error:', err.message);
+        return sendTelegram(chatId, '❌ Terjadi kesalahan.', { reply_to_message_id: msgId });
+      }
     }
 
   } catch (err) {
